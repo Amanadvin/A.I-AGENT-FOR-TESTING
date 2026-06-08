@@ -352,12 +352,11 @@ AI-Test-Automation-Agent/
 │
 ├── app/
 ├── components/
-├── actions/
+├── context/
 ├── lib/
 ├── db/
 ├── public/
-├── hooks/
-├── middleware.ts
+├── proxy.ts
 ├── drizzle.config.ts
 ├── package.json
 ├── next.config.js
