@@ -404,15 +404,3 @@ git push origin feature-name
 5. Open a Pull Request
 
 ---
-
-# 📜 License
-
-This project is licensed under the MIT License.
-
----
-
-## 👨‍💻 Author
-
-**AI Test Automation Agent Team**
-
-Built with ❤️ using Next.js, Gemini AI, Browserbase, Clerk, Stripe, Neon, and Drizzle ORM.
