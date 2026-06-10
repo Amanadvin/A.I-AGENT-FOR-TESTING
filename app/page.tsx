@@ -484,10 +484,26 @@ const AutoTestLanding: FC = () => {
             </p>
 
             {/* CTAs */}
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: "3rem", ...anim(heroIn, 0.3) }}>
-              <MagicButton>⬡ Connect GitHub repo →</MagicButton>
-              <MagicButton primary={false}>▶ Watch 2-min demo</MagicButton>
-            </div>
+          <div
+  style={{
+    display: "flex",
+    gap: 12,
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginBottom: "3rem",
+    ...anim(heroIn, 0.3)
+  }}
+>
+  <Link href="/workspace">
+    <MagicButton>⬡ Connect GitHub repo →</MagicButton>
+  </Link>
+
+  <Link href="/demo">
+    <MagicButton primary={false}>
+      ▶ Watch 2-min demo
+    </MagicButton>
+  </Link>
+</div>
 
             {/* Trust chips */}
             <div style={{ display: "flex", gap: 20, justifyContent: "center", flexWrap: "wrap", ...anim(heroIn, 0.4) }}>
@@ -702,28 +718,54 @@ const AutoTestLanding: FC = () => {
                 Connect your GitHub repo and have a full AI-generated test suite running in Browserbase within minutes.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                <button style={{
-                  fontFamily: "'Geist', sans-serif", fontWeight: 600, fontSize: 14,
-                  padding: "13px 28px", borderRadius: 10, border: "none", cursor: "pointer",
-                  background: "#fff", color: C.primaryDark,
-                  boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "none"; (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 14px rgba(0,0,0,0.15)"; }}
-                >⬡ Connect GitHub →</button>
-                <button style={{
-                  fontFamily: "'Geist', sans-serif", fontWeight: 500, fontSize: 14,
-                  padding: "13px 28px", borderRadius: 10, cursor: "pointer",
-                  background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)",
-                  color: "#fff", backdropFilter: "blur(8px)",
-                  transition: "background 0.2s",
-                }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.2)"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.12)"}
-                >Read the docs</button>
-              </div>
-            </div>
+  <Link href="/workspace">
+    <button
+      style={{
+        fontFamily: "'Geist', sans-serif",
+        fontWeight: 600,
+        fontSize: 14,
+        padding: "13px 28px",
+        borderRadius: 10,
+        border: "none",
+        cursor: "pointer",
+        background: "#fff",
+        color: C.primaryDark,
+        boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+        transition: "transform 0.2s, box-shadow 0.2s",
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.transform = "none";
+        e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.15)";
+      }}
+    >
+      ⬡ Connect GitHub →
+    </button>
+  </Link>
+
+  <button
+    style={{
+      fontFamily: "'Geist', sans-serif",
+      fontWeight: 500,
+      fontSize: 14,
+      padding: "13px 28px",
+      borderRadius: 10,
+      cursor: "pointer",
+      background: "rgba(255,255,255,0.12)",
+      border: "1px solid rgba(255,255,255,0.25)",
+      color: "#fff",
+      backdropFilter: "blur(8px)",
+      transition: "background 0.2s",
+    }}
+    onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+    onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
+  >
+    Read the docs
+  </button>
+</div>           </div>
           </div>
         </section>
 
