@@ -18,7 +18,7 @@ function EmptyWorkspace() {
             </h2>
 
             <p className='text-center mx-10'>
-                Connect your Github accounts and add a repository to generate and run test cases
+                Connect your Github accounts and add a repository to generate and run test case
             </p>
 
             <Button className='mt-5'>
