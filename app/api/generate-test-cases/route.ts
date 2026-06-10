@@ -1,191 +1,384 @@
-import { NextResponse } from "next/server";
 
-// Using Sets for O(1) lookups and cleaner management
-const ALLOWED_EXTENSIONS = new Set([
-  ".js",
-  ".jsx",
-  ".ts",
-  ".tsx",
-  ".json",
-  ".md",
-  ".py",
-  ".java",
-  ".cpp",
-  ".c",
-  ".cs",
-  ".go",
-  ".php",
-  ".rb",
-]);
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, Type } from "@google/genai";
 
-const IGNORE_PATHS = new Set([
-  "node_modules",
-  ".next",
-  "dist",
-  "build",
-  ".git",
-  "package-lock.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "__pycache__",
-  ".pytest_cache",
-  "venv",
-  ".env",
-]);
+import { db } from "@/db";
+import { cookies } from "next/headers";
+import { TestCasesTable, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
-function isUsefulFile(path: string): boolean {
-  const lowerPath = path.toLowerCase();
-  
-  // Split path into individual segments to avoid accidental partial matches
-  // (e.g., matching "src/components/button.tsx" against ".git" or "package-lock.json")
-  const pathSegments = lowerPath.split("/");
+const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY!,
+});
 
-  // Check if any directory or the exact filename is in the ignore list
-  const isIgnored = pathSegments.some((segment) => IGNORE_PATHS.has(segment));
-  if (isIgnored) return false;
+const ALLOWED_EXTENSIONS = [
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".json",
+    ".md",
+];
 
-  // Extract extension accurately
-  const lastDotIndex = lowerPath.lastIndexOf(".");
-  if (lastDotIndex === -1) return false;
+const IMPORTANT_FILES = [
+    "package.json",
+    "next.config",
+    "middleware",
+    "app/",
+    "pages/",
+    "components/",
+    "src/",
+    "lib/",
+    "utils/",
+    "actions/",
+    "api/",
+    "server/",
+];
 
-  const ext = lowerPath.substring(lastDotIndex);
-  return ALLOWED_EXTENSIONS.has(ext);
+const IGNORE_PATHS = [
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    ".git",
+    "coverage",
+    "public/",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".svg",
+    ".webp",
+    ".mp4",
+    ".mov",
+];
+
+function isUsefulFile(path: string) {
+    const isIgnored = IGNORE_PATHS.some((item) => path.includes(item));
+
+    const isAllowedExtension = ALLOWED_EXTENSIONS.some((ext) =>
+        path.endsWith(ext)
+    );
+
+    const isImportantPath = IMPORTANT_FILES.some((item) =>
+        path.includes(item)
+    );
+
+    return !isIgnored && isAllowedExtension && isImportantPath;
 }
 
-async function getRepoTree(
-  owner: string,
-  repo: string,
-  branch: string,
-  token?: string
-) {
-  const headers: HeadersInit = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "AI-Testing-Automation-Agent",
-  };
-
-  // Use standard Bearer token format for GitHub API
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  // Step 1: Get branch details to find the latest tree SHA
-  const branchUrl = `https://api.github.com/repos/${owner}/${repo}/branches/${branch}`;
-  console.log("Branch URL:", branchUrl);
-
-  const branchResponse = await fetch(branchUrl, {
-    headers,
-    cache: "no-store",
-  });
-
-  if (!branchResponse.ok) {
-    const errorText = await branchResponse.text();
-    throw new Error(
-      `Failed to fetch branch "${branch}": ${branchResponse.status} ${errorText}`
+async function getRepoTree({
+    owner,
+    repo,
+    branch,
+    githubToken,
+}: {
+    owner: string;
+    repo: string;
+    branch: string;
+    githubToken: string;
+}) {
+    const res = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+        {
+            headers: {
+                Authorization: `Bearer ${githubToken}`,
+                Accept: "application/vnd.github+json",
+            },
+        }
     );
-  }
 
-  const branchData = await branchResponse.json();
-  const treeSha = branchData?.commit?.commit?.tree?.sha;
+    if (!res.ok) {
+        throw new Error("Failed to fetch GitHub repo tree");
+    }
 
-  if (!treeSha) {
-    throw new Error("Could not determine repository tree SHA.");
-  }
+    const data = await res.json();
 
-  console.log("Tree SHA:", treeSha);
-
-  // Step 2: Fetch full recursive tree structure
-  const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`;
-  console.log("Tree URL:", treeUrl);
-
-  const treeResponse = await fetch(treeUrl, {
-    headers,
-    cache: "no-store",
-  });
-
-  if (!treeResponse.ok) {
-    const errorText = await treeResponse.text();
-    throw new Error(
-      `Failed to fetch repo tree: ${treeResponse.status} ${errorText}`
-    );
-  }
-
-  const data = await treeResponse.json();
-
-  if (!data.tree || !Array.isArray(data.tree)) {
-    return [];
-  }
-
-  // Filter only file blobs that pass our structural checks
-  const usefulFiles = data.tree
-    .filter((item: any) => item.type === "blob")
-    .filter((item: any) => isUsefulFile(item.path));
-
-  console.log(
-    "Useful Files Found:",
-    usefulFiles.map((file: any) => file.path)
-  );
-
-  return usefulFiles;
+    return data.tree
+        .filter((item: any) => item.type === "blob")
+        .filter((item: any) => isUsefulFile(item.path))
+        .slice(0, 25);
 }
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-
-    const owner = body.owner;
-    const repo = body.repo;
-    const branch = body.branch || "main";
-    const token = body.token; // Extracted token passed from the frontend request
-
-    console.log("Owner:", owner);
-    console.log("Repo:", repo);
-    console.log("Branch:", branch);
-    console.log("Token Provided:", token ? "Yes" : "No");
-
-    if (!owner || !repo) {
-      return NextResponse.json(
+async function readGithubFile({
+    owner,
+    repo,
+    path,
+    branch,
+    githubToken,
+}: {
+    owner: string;
+    repo: string;
+    path: string;
+    branch: string;
+    githubToken: string;
+}) {
+    const res = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`,
         {
-          error: "Missing repository details (owner or repo)",
-        },
-        { status: 400 }
-      );
-    }
-
-    const repoFiles = await getRepoTree(owner, repo, branch, token);
-
-    // Limit output to the first 25 files to preserve memory/payload size limits
-    const validFiles = repoFiles.slice(0, 25);
-
-    console.log("Total Filtered Files Count:", repoFiles.length);
-    console.log("Capped Files Count:", validFiles.length);
-
-    if (validFiles.length === 0) {
-      return NextResponse.json(
-        {
-          error: "No useful source files found matching target extensions",
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      totalFiles: repoFiles.length,
-      returnedFilesCount: validFiles.length,
-      files: validFiles.map((f: any) => f.path),
-      message: "Repository scanned successfully",
-    });
-  } catch (error: any) {
-    console.error(
-      "Critical Failure inside Generation Agent Route:",
-      error
+            headers: {
+                Authorization: `Bearer ${githubToken}`,
+                Accept: "application/vnd.github+json",
+            },
+        }
     );
 
-    return NextResponse.json(
-      {
-        error: error.message || "Internal server error",
-      },
-      { status: 500 }
-    );
-  }
+    if (!res.ok) {
+        return null;
+    }
+
+    const data = await res.json();
+
+    if (!data.content) {
+        return null;
+    }
+
+    const decodedContent = Buffer.from(data.content, "base64").toString("utf-8");
+
+    return {
+        path,
+        content: decodedContent.slice(0, 5000),
+    };
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        const body = await req.json();
+        const cookiesStore = await cookies();
+        const githubToken = cookiesStore.get('gh_token')?.value;
+
+        const {
+            userId,
+            repoId,
+            owner,
+            repo,
+            branch = "main",
+        } = body;
+
+        if (!userId || !owner || !repo || !githubToken) {
+            return NextResponse.json(
+                {
+                    error: "userId, owner, repo and githubToken are required",
+                },
+                { status: 400 }
+            );
+        }
+
+        // Check user credits
+        const [user] = await db.select().from(users).where(eq(users.id, Number(userId)));
+        if (!user) {
+            return NextResponse.json({ error: "User not found" }, { status: 404 });
+        }
+        if (user.credits < 200) {
+            return NextResponse.json(
+                { error: "Insufficient credits to generate test cases. Required: 200 credits." },
+                { status: 402 } // Payment Required
+            );
+        }
+
+        // 1. Get repo tree
+        const repoFiles = await getRepoTree({
+            owner,
+            repo,
+            branch,
+            githubToken,
+        });
+
+        // 2. Read useful files
+        const fileContents = await Promise.all(
+            repoFiles.map((file: any) =>
+                readGithubFile({
+                    owner,
+                    repo,
+                    branch,
+                    path: file.path,
+                    githubToken,
+                })
+            )
+        );
+
+        const validFiles = fileContents.filter(Boolean);
+
+        if (validFiles.length === 0) {
+            return NextResponse.json(
+                {
+                    error: "No useful source files found in this repository",
+                },
+                { status: 400 }
+            );
+        }
+
+        // 3. Prepare compact repo context
+        const repoContext = validFiles
+            .map(
+                (file: any) => `
+File Path: ${file.path}
+
+File Content:
+${file.content}
+`
+            )
+            .join("\n\n----------------------\n\n");
+
+        // 4. Ask Gemini to generate test cases with metadata
+        const prompt = `
+You are an expert QA automation engineer.
+
+Analyze the GitHub repository source code and generate useful small test cases.
+
+Your goal:
+Generate test cases that can later be converted into Playwright / Browserbase automation scripts.
+
+Repository:
+Owner: ${owner}
+Repo: ${repo}
+Branch: ${branch}
+
+Repository File Context:
+${repoContext}
+
+Generate 5 to 8 test cases.
+
+Each test case must include:
+- title: clear test case title
+- description: one-line description
+- type: one of ui, auth, api, form, integration, edge-case
+- priority: low, medium, high
+- targetRoute: most likely app route/page to test, for example /sign-in, /dashboard, /api/users
+- targetFiles: related file paths from the repository context
+- expectedResult: what should happen when the test passes
+
+Important rules:
+- Only use file paths that exist in the repository context.
+- Do not invent fake target files.
+- If route is unclear, infer from Next.js app/page structure.
+- Keep description short, only one line.
+- Return only valid JSON.
+`;
+
+        const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        testCases: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: {
+                                        type: Type.STRING,
+                                    },
+                                    description: {
+                                        type: Type.STRING,
+                                    },
+                                    type: {
+                                        type: Type.STRING,
+                                        enum: [
+                                            "ui",
+                                            "auth",
+                                            "api",
+                                            "form",
+                                            "integration",
+                                            "edge-case",
+                                        ],
+                                    },
+                                    priority: {
+                                        type: Type.STRING,
+                                        enum: ["low", "medium", "high"],
+                                    },
+                                    targetRoute: {
+                                        type: Type.STRING,
+                                    },
+                                    targetFiles: {
+                                        type: Type.ARRAY,
+                                        items: {
+                                            type: Type.STRING,
+                                        },
+                                    },
+                                    expectedResult: {
+                                        type: Type.STRING,
+                                    },
+                                },
+                                required: [
+                                    "title",
+                                    "description",
+                                    "type",
+                                    "priority",
+                                    "targetRoute",
+                                    "targetFiles",
+                                    "expectedResult",
+                                ],
+                            },
+                        },
+                    },
+                    required: ["testCases"],
+                },
+            },
+        });
+
+        const aiResult = JSON.parse(response.text || "{}");
+        const testCases = aiResult.testCases || [];
+
+        if (!testCases.length) {
+            return NextResponse.json(
+                {
+                    error: "Gemini did not generate any test cases",
+                },
+                { status: 400 }
+            );
+        }
+
+        // 5. Save generated test cases to Neon DB
+        const insertedTestCases = await db
+            .insert(TestCasesTable)
+            .values(
+                testCases.map((testCase: any) => ({
+                    userId,
+                    repoId,
+                    repoName: repo,
+                    repoOwner: owner,
+                    branch,
+
+                    title: testCase.title,
+                    description: testCase.description,
+                    type: testCase.type,
+                    priority: testCase.priority,
+
+                    targetRoute: testCase.targetRoute,
+                    targetFiles: testCase.targetFiles || [],
+                    expectedResult: testCase.expectedResult,
+
+                    status: "generated",
+                }))
+            )
+            .returning();
+
+        // 6. Deduct 200 credits
+        const newCredits = user.credits - 200;
+        await db.update(users).set({ credits: newCredits }).where(eq(users.id, Number(userId)));
+
+        return NextResponse.json({
+            success: true,
+            message: "Test cases generated successfully",
+            count: insertedTestCases.length,
+            testCases: insertedTestCases,
+            credits: newCredits,
+        });
+    } catch (error: any) {
+        console.error("Generate test cases error:", error);
+
+        return NextResponse.json(
+            {
+                success: false,
+                error: error.message || "Failed to generate test cases",
+            },
+            { status: 500 }
+        );
+    }
 }
