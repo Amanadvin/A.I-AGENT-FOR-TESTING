@@ -1,9 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Removed unknown at-rule @custom-variant causing parser warning */
+@custom-variant dark (&:is(.dark *));
 
-.theme-inline {
+@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -131,12 +131,10 @@
 
 @layer base {
   * {
-    border-color: var(--color-border);
-    outline-color: var(--color-ring);
+    @apply border-border outline-ring/50;
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    @apply bg-background text-foreground;
   }
 }
